@@ -4,6 +4,8 @@ error_reporting(E_ALL);
 
 set_time_limit (0);
 
+define("MAX_CLIENT", 4);
+
 	/*----------------------------------------------------------------PARTIE--------------------------------------------------------------------------------*/
 	
 	class Partie{		
@@ -13,14 +15,13 @@ set_time_limit (0);
 		private $joueurs = array();
 		private $maxClient; 
 		private $address = '127.0.0.1';
-		private $port = 1002;
+		private $port = 3333;
 		private $cartes = array();
 		private $message;
 			
 		public function __construct(){
 			$this->joueurActif = 0;
 			$this->joueurSuivant = 1;
-			$this->maxClient = 1;
 			$this->waitClient();
 		}
 		
@@ -59,7 +60,7 @@ set_time_limit (0);
 			$this->socketServer = $this->startServer();
 			
 			/*Accepte client */
-			for($i=0;$i<$this->maxClient;$i++){
+			for($i=0;$i<MAX_CLIENT;$i++){
 			
 				if(($client = socket_accept($this->socketServer)) === false){
 					 echo "socket_accept() a échoué : raison : " . socket_strerror(socket_last_error($this->socketServer)) . "\n";
@@ -91,7 +92,7 @@ set_time_limit (0);
 					$messageClient="";
 					
 					//$numChanged = socket_select($clients, $write, $except, 0);
-				for($i=0;$i<$this->maxClient;$i++){	
+				for($i=0;$i<MAX_CLIENT;$i++){	
 					
 					$socket = $this->joueurs[$i]->getSocket();
 					
@@ -99,49 +100,52 @@ set_time_limit (0);
 					socket_set_option($socket,SOL_SOCKET, SO_RCVTIMEO, array("sec"=>1, "usec"=>0));
 					socket_set_nonblock($socket);
 					
-					//if(false !== ($bytes = socket_recv($this->joueurs[$i]->getSocket(), $messageClient, 2048,MSG_DONTWAIT))){
+					/*lit les données du client*/
 					$messageClient = socket_read($socket, 1024);
-								
-						/*si le message du client est vide (improbable) on traite*/
-						if($messageClient != ""){
+					
+					/*si le message du client est vide (improbable) on traite*/
+					if($messageClient != ""){					
+						
+						/*si c'est un catch*/
+						if($this->hasMessageClientCatch($messageClient)){
+							$joueurCatcheur="";
+							$lstJoueursCatch;
+							$requeteC="";
 							
-							/*si c'est un catch*/
-							if($this->hasMessageClientCatch()){
-								$joueurCatcheur="";
-								$lstJoueursCatch;
-								$requeteC="";
-								
-								$joueurCatcheur = $this->getJoueurCatcheur($messageClient);
-								
-								/*prepare la requete pour le C*/
-								$requeteC = $this->reqPrepareForC();
-								
-								/*Lande le module c*/
-								$lstJoueursCatcher = lancerModuleC($requeteC);
-								
-								/*affectation des joueurs*/
-								$lstJoueursCatcher = $this->tradRequeteC($requeteC);
-								
-								/*envoie la mise a jour aux joueurs en fonction de la reponse du C en donnant l'etat 2 : catch*/
-								$this->writeToPlayers(2,$joueurCatcheur,$lstJoueursCatch);
+							/*on recupere le num du client*/
+							$joueurCatcheur = $this->getJoueurCatcheur($messageClient);
 							
-							/*sinon c'est forcement pour tiré une carte*/
-							}else{
-								/*envoie mise a jour aux joueurs en donnant l'etat 1 : tirer carte*/
-								//$this->writeToPlayers(1,"","");
-								/*On met à jour le nouveau joueur actif et le joueur suivant*/
-								//$this->majJoueurActif();
-							}
+							/*prepare la requete pour le C*/
+							$requeteC = $this->reqPrepareForC();
+							
+							/*Lande le module c*/
+							$lstJoueursCatcher = lancerModuleC($requeteC);
+							
+							/*affectation des joueurs*/
+							$lstJoueursCatcher = $this->tradRequeteC($requeteC);
+							
+							/*envoie la mise a jour aux joueurs en fonction de la reponse du C en donnant l'etat 2 : catch*/
+							$this->writeToPlayers(2,$joueurCatcheur,$lstJoueursCatch);
+						
+						/*sinon c'est forcement pour tiré une carte*/
+						}elseif($this->hasMessageClientPlay($messageClient)){
+							/*envoie mise a jour aux joueurs en donnant l'etat 1 : tirer carte*/
+							$this->writeToPlayers(1,"","");
+							
+							/*On met à jour le nouveau joueur actif et le joueur suivant*/
+							$this->majJoueurActif();
+						}else{
+							//message chat
 						}
 					}
-				 //echo "erreur : ".socket_strerror(socket_last_error());
-				//socket_close($this->socketServer);
+				}
 			}
 		}
 		/*
 		* envoie un message particulier aux joueurs
 		*/
 		public function writeToPlayers($etat=0,$joueurCatcheur,$lstJoueursCatcher){
+			$message="";
 			
 			switch($etat){
 				/*init*/
@@ -159,19 +163,19 @@ set_time_limit (0);
 						
 						/*pour chaque joueurs on envoie le message lui etant dédié*/			
 						foreach($this->joueurs as $joueur){
+							$message="";
 							$message = $joueur->getMessageDrawCard($this->joueurSuivant,$this->joueurs);
-							socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
-							fflush($joueur->getSocket());
+							echo "<br/>---->".$message."\n";
+							//socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
 						}
+						//exit(1);
 					break;
 				/*catch*/
 				case 2 :
-						exit(0);
 						/*pour chaque joueurs on envoie le message lui etant dédié*/			
 						foreach($this->joueurs as $joueur){
 							$message = $joueur->getMessageCatch($joueurCatcheur,$lstJoueursCatcher,$this->joueurs);
 							socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
-							fflush($joueur->getSocket());
 						}						
 					break;
 				default : echo "!!!!!!!!!!!!! erreur !!!!!!!!!!!!!";
@@ -234,12 +238,23 @@ set_time_limit (0);
 		}
 		
 		/*
+		* verifie si le message provenant du client et de type PLAY
+		* retour : vrai si c'est un play, faux si non
+		*/
+		public function hasMessageClientPlay($message=""){
+			$resultat = explode("-",$message);
+			if($resultat[0] == "PLAY"){
+				return true;
+			}else return false;
+		}
+		
+		/*
 		* verifie si le message provenant du client et du au catch
 		* retour : vrai si c'est un catch, faux si non
 		*/
 		public function hasMessageClientCatch($message=""){
 			$resultat = explode("-",$message);
-			if($resultat[0] == "catch"){
+			if($resultat[0] == "CATCH"){
 				return true;
 			}else return false;
 		}
@@ -287,9 +302,15 @@ set_time_limit (0);
 			
 			/*Affectation des cartes aux joueurs*/
 			$this->joueurs[0]->setCardsHide(array_slice($this->cartes,0,-60));
-			//$this->joueurs[1]->setCardsHide(array_slice($this->cartes,21,-39));
-			//$this->joueurs[2]->setCardsHide(array_slice($this->cartes,41,-19));
-			//$this->joueurs[3]->setCardsHide(array_slice($this->cartes,60));
+			$this->joueurs[1]->setCardsHide(array_slice($this->cartes,21,-39));
+			$this->joueurs[2]->setCardsHide(array_slice($this->cartes,41,-19));
+			$this->joueurs[3]->setCardsHide(array_slice($this->cartes,60));
+			
+			/*carte retourné*/
+			$this->joueurs[0]->setActualCard(0);
+			$this->joueurs[1]->setActualCard(0);
+			$this->joueurs[2]->setActualCard(0);
+			$this->joueurs[3]->setActualCard(0);
 		}
 	}
 ?>
