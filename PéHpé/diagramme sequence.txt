@@ -1,0 +1,30 @@
+									Client 												|															Serveur
+																						|
+										(		connection au serveur				=>	|	=>				Accept client	) x 4
+																						|
+		les clients recoivent un message leur permettant de tirer une carte ou pas 	<=	|   <=			le serveur retourne un message type : "1-PLAY"  
+																						|   
+		le client recevant le chiffre lui permettant de jouer, joue !				=>	|	=>			le serveur reçoi le message et tire une de ces cartes
+																						|
+										 les clients recoivent la carte d'un joueur	<=	|	<=				Envoie d'une carte au premier client en question message type : "1-02" => "NumClient-Carte" + "-PLAY"
+																						|
+								=>SI(un joueur clique sur catch)				    =>  |	=> 			le serveur recoie un message de type : "catch-'numClient'"
+																						|
+						le client recoi le message	et le traite					<=	|	<=			le serveur verifie avec les autres joueurs si 
+																						|		des cartes correspondent et renvoie un message du type :
+																						|		"retourCatch;J1:carte|nbCarte;J2:carte|nbCarte;J3:carte|nbCarte;J4:carte|nbCarte;NumClientAjouer"
+																						|
+								=>Sinon SI(le joueur clique sur tirer carte)		=>  |	=> le serveur recoi un message du type : (tirerCarte:NumClient)
+																						|
+								le client reçcoi le message le traite 				<=	|	<= le serveur renvoie une carte du type : "4-20" => "NumClientQuiPeuJoué-Carte"
+																						|
+										...............									|							...............	
+																						|
+																						|
+																						|
+																						|
+																						|
+																						|
+																						|
+																						|
+																						envoie au java draw card : 0-11-20;1-0-20-PLAY;2-0-20;3-0-20;

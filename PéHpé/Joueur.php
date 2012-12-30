@@ -21,6 +21,13 @@
 		}
 		
 		/*
+		* AJoute un tableau de carte
+		*/
+		public function addCardHide($cards){
+			$this->cardsHide = array_merge($this->cardsHide,$cards);
+		}
+		
+		/*
 		* Setteur carte
 		*/
 		public function setCardsHide($carte = array()){
@@ -35,15 +42,29 @@
 		}
 		
 		/*
+		* Getteur
+		* return : renvoie le nombre de cartes correspondant au chiffre passé en parametre ou -1 si impossible
+		* Param : Un entier, le nb de cartes
+		*/
+		public function getCardsKnownWithNumber($nbCartes){
+			$tab = array();
+			if(!empty($this->cardsKnown)){
+				for($i=0;$i<$nbCartes;$i++){
+					array_push($tab,array_shift($this->cardsKnown));
+				}
+			}else return -1;
+			
+			return $tab;
+		}
+		
+		/*
 		* Setteur carte connnu
 		*/
 		public function setCardsKnown($cardKnown){
-			if(is_array($cardKnown)){
-				for($i=0;$i>count($cardKnown);$i++){
+			for($i=0;$i<count($cardKnown);$i++){
 					array_push($this->cardsKnown,$cardKnown);
 				}
-			}else array_push($this->cardsKnown,$cardKnown);
-		}
+			}
 		
 			/*
 		* Getteur carte connnu
@@ -72,6 +93,10 @@
 			return count($this->cardsKnown);
 		}
 		
+		/*
+		* getNbHideCard
+		* retourne le nb total de carde hide
+		*/
 		public function getNbHideCard(){
 			return count($this->cardsHide);
 		}
@@ -81,6 +106,7 @@
 		* param : la carte qui vient d'etre tiré
 		*/
 		public function setActualCard($card){
+			
 			$this->actualCard = $card;
 		}
 		
@@ -102,9 +128,45 @@
 		
 		/*
 		* met à jours les cartes des joueurs;
+		* param : soit une tableau de tableau de carte, soit un tableau de carte
 		*/
-		public function setAfterCatch($cardKnown){
-			$this->setCardsHide(array_merge($this->getCardsKnown(),$cardKnown));
+		public function setAfterCatchGagnant($var){
+			$cartes = array();
+		
+			if(count($var) > 1){
+				foreach($var as $joueur){
+					$nbRand = rand(1,3);
+					
+					if($cartes = ($this->getCardsKnownWithNumber($nbRand)) != -1){
+						$joueur->addCardHide(array_merge($joueur->getCardsKnown(),$cartes));
+						$joueur->setActualCard(0);
+					}
+				}
+			}else{
+				$var->addCardHide($var->getCardsKnown());
+				$var->addCardHide($this->getCardsKnown());
+				$var->setActualCard(0);
+				$this->setActualCard(0);
+			}
+			//TODO gagnant
+		}
+		
+		/*
+		* met à jours les cartes des joueurs;
+		* param : soit une tableau de tableau de carte, soit un tableau de carte
+		*/
+		public function setAfterCatchPerdant($joueurs){
+			$i=0;
+			foreach($joueurs as $joueur){
+				if($this->getNom() != $joueur->getNom()){
+					$this->addCardHide($joueur->getCardsKnown());
+					$joueur->setActualCard(0);
+				}
+			}
+			$this->setActualCard(0);
+			$this->addCardHide((array)$this->getCardsKnown());
+			
+			//TODO gagnant
 		}
 		
 		/*****************************************************************************************************/
@@ -116,11 +178,27 @@
 		public function drawCard(){
 			$carte="";
 			/*si on encore des carte dans notre paquet de carte caché*/
-			if(!empty($this->cards)){
-				/*on met la premiere carte caché dans le paquet de carte devoilé*/
-				$carte = array_shift($this->cards);
+			if(!empty($this->cardsHide)){
+			
+				/*on met la premiere carte caché dans le paquet de carte devoilé et on met a jours la carte actuelement devoilé*/
+				$carte = array_shift($this->cardsHide);
+				
 				array_push($this->cardsKnown,$carte);
 				$this->setActualCard($carte);
+			}elseif(!empty($this->cardsKnow)){
+				
+				/*on met les cartes connu dans les cartes caché vu qu'on a plus de carte a tiré*/
+				$this->cardsHide = array();
+				$this->cardsHide = $this->cardsKnow;
+				$this->cardsKnow = array();
+				
+				/*on met la premiere carte caché dans le paquet de carte devoilé et on met a jours la carte actuelement devoilé*/
+				$carte = array_shift($this->cardsHide);
+				
+				array_push($this->cardsKnown,$carte);
+				$this->setActualCard($carte);
+			}else{
+				// il n'a plus de carte il a gagné TODO...
 			}
 		}
 		
@@ -131,9 +209,9 @@
 		public function getMessageInit($joueurActif=0){
 			$message="";
 			if($this->getNom() == $joueurActif){
-				$message=$this->getNom()."-PLAY";
-			}else $message=$this->getNom();
-			return $message;
+				$message=$this->getNom()."-PLAY-INIT";
+			}else $message=$this->getNom()."-INIT";
+			return $message.";";
 		}
 		
 		/*
@@ -143,17 +221,11 @@
 		*/
 		public function getMessageDrawCard($joueurSuivant=0,$joueurs=array()){
 			$message="";
-		
-			foreach($joueurs as $joueur){
-				if($joueur->getNom()!= $this->getNom()){
-					/*pour chaque joueur on met sa carte actuel, et sont nombre total de carte*/
-					$message += $joueur->getActualCard()."-".$joueur->getAllCards()."-";
-				}
-				/*si je suis le joueur suivant*/
-				if($joueurSuivant == $this->getNom()){
-					/*vu que c'est le joueur suivant ou lui affecte PLAY pour qu'il puisse jouer*/
-					$message+="-PLAY";
-				}
+			
+			for($i=0;$i<count($joueurs);$i++){
+				/*pour chaque joueur on met sa carte actuel, et sont nombre total de carte*/
+				$message .= $joueurs[$i]->getNom()."-".$joueurs[$i]->getActualCard()."-".$joueurs[$i]->getAllCards().
+				($joueurSuivant == $joueurs[$i]->getNom() ? (isset($joueurs[$i+1]) ? "-PLAY;" : "-PLAY") : (isset($joueurs[$i+1]) ? ";" : ""));
 			}
 			return $message;
 		}
@@ -162,36 +234,23 @@
 		* Renvoie le message correspondant de type : 
 		* Param la liste de carte des joueurs
 		*/
-		public function getMessageCatch($joueurCatcheur,$joueursCatcher,$joueurs){
+		public function getMessageCatch($joueursCatcher=array(),$joueurs){
 			$tab=array();
 			$message="";
+			
 			/*si le catch et gagné*/
-			if($joueursCatcher != ""){
-				/*si il y a plus d'un joueur*/
-				if(count($joueursCatcher) > 1){
-					/*foreach($joueursCatcher as $joueur){
-						array_push($tab,$joueur->getCardsKnown());
-					}
-					$joueurCatcheur->setAfterCatch($tab);
-					foreach($joueurs as $joueur){}*/
-					
-				}else{
-					$joueursCatcher->setAfterCatch($joueurCatcheur->getCardsKnown());
-					foreach($joueurs as $joueur){
-						$message += $joueur->getActualCard()."-".$joueur->getAllCards()."-";
-					}
-				}
+			if(!empty($joueursCatcher)){
+				$this->setAfterCatchGagnant($joueursCatcher);
 			/*Si le catch est raté*/
 			}else{
-				/*foreach($joueursCatcher as $joueur){
-					array_push($tab,$joueur->getCardsKnown());
-				}*/
-				$joueurCatcheur->setAfterCatch($joueursCatcher->getCardsKnown());
-				
-				foreach($joueurs as $joueur){
-					$message += $joueur->getActualCard()."-".$joueur->getAllCards()."-";
-				}
+				$this->setAfterCatchPerdant($joueurs);
 			}
+			
+			/*pour chaque joueur on met sa carte actuel, et sont nombre total de carte*/
+			for($i=0;$i<count($joueurs);$i++){
+				$message .= $joueurs[$i]->getNom()."-".$joueurs[$i]->getActualCard()."-".$joueurs[$i]->getAllCards().";";
+			}
+			return $message;
 		}
 	}
 	

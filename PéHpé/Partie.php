@@ -1,5 +1,5 @@
 ﻿<?php
-//#!/usr/local/bin/php -q
+//!/usr/local/bin/php -q
 error_reporting(E_ALL);
 
 set_time_limit (0);
@@ -13,9 +13,8 @@ define("MAX_CLIENT", 4);
 		private $joueurActif;
 		private $joueurSuivant;
 		private $joueurs = array();
-		private $maxClient; 
 		private $address = '127.0.0.1';
-		private $port = 3333;
+		private $port = 6666;
 		private $cartes = array();
 		private $message;
 			
@@ -36,14 +35,17 @@ define("MAX_CLIENT", 4);
 
 			if (($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) === false) {
 				echo "socket_create() a échoué : raison : " . socket_strerror(socket_last_error()) . "\n";
+				exit(0);
 			} 
 
 			if (socket_bind($sock, $this->address, $this->port) === false) { 
 				echo "socket_bind() a échoué : raison : " . socket_strerror(socket_last_error($sock)) . "\n";
+				exit(0);
 			} 
 			
 			if (socket_listen($sock, 5) === false) {
 				echo "socket_listen() a échoué : raison : " . socket_strerror(socket_last_error($sock)) . "\n";
+				exit(0);
 			}
 			
 			return $sock;
@@ -108,24 +110,18 @@ define("MAX_CLIENT", 4);
 						
 						/*si c'est un catch*/
 						if($this->hasMessageClientCatch($messageClient)){
-							$joueurCatcheur="";
+							$lstJoueursCatcher=array();
 							$lstJoueursCatch;
 							$requeteC="";
 							
 							/*on recupere le num du client*/
-							$joueurCatcheur = $this->getJoueurCatcheur($messageClient);
+							$j = $this->getJoueurCatcheur($messageClient);
 							
-							/*prepare la requete pour le C*/
-							$requeteC = $this->reqPrepareForC();
+							/*Lande le module c et retourne un tableau de joueurs catché*/
+							$lstJoueursCatcher = $this->runModuleC($this->joueurs[$j]);
 							
-							/*Lande le module c*/
-							$lstJoueursCatcher = lancerModuleC($requeteC);
-							
-							/*affectation des joueurs*/
-							$lstJoueursCatcher = $this->tradRequeteC($requeteC);
-							
-							/*envoie la mise a jour aux joueurs en fonction de la reponse du C en donnant l'etat 2 : catch*/
-							$this->writeToPlayers(2,$joueurCatcheur,$lstJoueursCatch);
+							/*envoie la mise a jour aux joueurs en fonction de la onse du C en donnant l'etat 2 : catch*/
+							$this->writeToPlayers(2,$this->joueurs[$j],$lstJoueursCatcher);
 						
 						/*sinon c'est forcement pour tiré une carte*/
 						}elseif($this->hasMessageClientPlay($messageClient)){
@@ -135,7 +131,7 @@ define("MAX_CLIENT", 4);
 							/*On met à jour le nouveau joueur actif et le joueur suivant*/
 							$this->majJoueurActif();
 						}else{
-							//message chat
+							//TODO message chat
 						}
 					}
 				}
@@ -165,16 +161,18 @@ define("MAX_CLIENT", 4);
 						foreach($this->joueurs as $joueur){
 							$message="";
 							$message = $joueur->getMessageDrawCard($this->joueurSuivant,$this->joueurs);
-							echo "<br/>---->".$message."\n";
-							//socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
+							socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
 						}
-						//exit(1);
 					break;
 				/*catch*/
 				case 2 :
-						/*pour chaque joueurs on envoie le message lui etant dédié*/			
+						$message = $joueurCatcheur->getMessageCatch($lstJoueursCatcher,$this->joueurs);
+						
+						//echo "<br/>message ==> ".$message."<br/>";
+						//$this->debug($this->joueurs);
+						//exit(1);
+						
 						foreach($this->joueurs as $joueur){
-							$message = $joueur->getMessageCatch($joueurCatcheur,$lstJoueursCatcher,$this->joueurs);
 							socket_write($joueur->getSocket(),$message."\n",strlen($message."\n"));
 						}						
 					break;
@@ -184,57 +182,85 @@ define("MAX_CLIENT", 4);
 
 		/***************************************************************************************************************************************************/
 		
-		
-		/*
-		* Prepare la requete qui va etres envoyer au C pour verifification
-		* retour : String requete
-		*/
-		public function reqPrepareForC(){
-			foreach($this->joueurs as $joueur){
-				$requeteC += $joueur->getActualCard()+"-";
-			}
-			return $requeteC;
-		}
-		
 		/*
 		* traduit la requete envoyer par le C
-		* param : reponde requete de type : "numjoueur-numjoueur"
-		* return : renvoie une string ou un array de joueur(s) (traduction de la reponse C)
+		* param : requete de type : "numjoueur-numjoueur"
+		* return : renvoie une string ou un array de joueur(s) catché (traduction de la reponse C)
 		*/
-		public function tradRequeteC($req){
+		public function tradRequeteC($req="", $joueurs=array()){
 			$rep;
 			$tabJ = array();
+			
+			if($req == ""){
+				return array();
+				echo "<br/>--->".$req;
+				exit(1);
+			}
 			$rep = explode("-",$req);
 			
 			switch(count($rep)){
 				case 0 : 
-					return "";
+					return array();
 					break;
 				case 1 : 
-					return $this->joueurs[$rep];
+					return $joueurs[intVal($rep[0])];
 					break;
 				case 2 : 
-					array_push($tabJ,$this->joueurs[$rep[0]]);
-					array_push($tabJ,$this->joueurs[$rep[1]]);
+					array_push($tabJ,$joueurs[intVal($rep[0])]);
+					array_push($tabJ,$joueurs[intVal($rep[1])]);
 					return $tabJ;
 					break;
 				case 3 : 
-					array_push($tabJ,$this->joueurs[$rep[0]]);
-					array_push($tabJ,$this->joueurs[$rep[1]]);
-					array_push($tabJ,$this->joueurs[$rep[2]]);
+					array_push($tabJ,$joueurs[intVal($rep[0])]);
+					array_push($tabJ,$joueurs[intVal($rep[1])]);
+					array_push($tabJ,$joueurs[intVal($rep[2])]);
 					return $tabJ;
 					break;
 			}  
+			
 		}
 		
 		/*
 		* Lance le module c
-		* param : la requete préparé
+		* param : le joueurCatcheur
+		*/			
+		public function runModuleC($joueurCatcheur){
+			
+			$return="0";
+			$reponseC = "";
+			$nbJoueur=0;
+			$tab = array();
+			$tabReponseC = array();
+			
+			/*compte le nombre de joueur restant et remplit le tableau des joueurs catché*/
+			foreach($this->joueurs as $joueur){
+				if($joueur->getNom() != $joueurCatcheur->getNom()){
+					array_push($tab, $joueur);
+				}
+			}
+			
+			$nbJoueur = $this->getNbPlayers();
+			
+			array_push($tab, $joueurCatcheur);
+			
+			if($nbJoueur == 2){
+				$comand = "./jungle ".$tab[0]->getActualCard()." ".$tab[1]->getActualCard();
+				$reponseC = system($comand, $return);
+			}else if($nbJoueur == 3){
+				$comand = "./jungle ".$tab[0]->getActualCard()." ".$tab[1]->getActualCard()." ".$tab[2]->getActualCard();
+				$reponseC = system($comand, $return);
+			}else if($nbJoueur == 4){
+				$comand = "./jungle ".$tab[0]->getActualCard()." ".$tab[1]->getActualCard()." ".$tab[2]->getActualCard()." ".$tab[3]->getActualCard();
+				$reponseC = system($comand, $return);
+			}
+			return $this->tradRequeteC($reponseC, $tab);
+		}
+		
+		/*
+		* Retour : un entier representent le nombre de joueurs
 		*/
-		public function lancerModuleC($requete){
-			//$lastLine = system("./Jungle ".$req." ",$return);
-			//return $lastLine;
-			return "";
+		public function getNbPlayers(){
+			return count($this->joueurs);
 		}
 		
 		/*
@@ -261,12 +287,12 @@ define("MAX_CLIENT", 4);
 		
 		/*
 		* Renvoie le joueur qui a catcher
-		* param : le message lu par read
+		* param : le message renvoyé par read_socket
 		*/
 		public function getJoueurCatcheur($messageClient){
-			$resultat = 0;
+			$resultat = array();
 			$resultat = explode("-",$messageClient);
-			return $this->joueurs[$resultat[1]];
+			return intval($resultat[1]);
 		}
 		
 		/*
@@ -274,7 +300,7 @@ define("MAX_CLIENT", 4);
 		*/
 		public function majJoueurActif(){
 			$this->joueurActif = $this->joueurSuivant;
-			$this->joueurSuivant = ($this->joueurActif == $this->maxClient-1 ? 0 : $this->joueurActif+1);
+			$this->joueurSuivant = ($this->joueurActif == MAX_CLIENT-1 ? 0 : $this->joueurActif+1);
 		}
 		
 		/*----------------------------------------------------------Fonction lié a la gestion des cartes-----------------------------------------------*/
@@ -311,6 +337,15 @@ define("MAX_CLIENT", 4);
 			$this->joueurs[1]->setActualCard(0);
 			$this->joueurs[2]->setActualCard(0);
 			$this->joueurs[3]->setActualCard(0);
+		}
+		
+		/*
+		* Fonction de debug
+		*/
+		public function debug($var){
+			echo "<br/>------------------------------------------------------------------<br/>";
+			print_r($var);
+			echo "<br/>------------------------------------------------------------------<br/>";
 		}
 	}
 ?>
